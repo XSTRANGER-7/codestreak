@@ -66,7 +66,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onBack }) => {
       <GridBackground />
       
       <motion.div 
-        className="relative z-10 w-full max-w-md p-8"
+        className="relative z-10 w-full max-w-md py-6 px-2"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
