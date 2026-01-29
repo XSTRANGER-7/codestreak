@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { DateTime } from 'luxon';
+import { supabase } from '../firebase/config';
 
 interface Problem {
   id: string;
@@ -111,24 +112,87 @@ export const UserDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     if (user) {
-      // Load user data from localStorage for demo
-      const savedData = localStorage.getItem(`userData_${user.uid}`);
-      if (savedData) {
-        setUserStats(JSON.parse(savedData));
-      }
+      loadUserData();
     }
   }, [user]);
 
-  const saveData = (newStats: UserStats) => {
-    if (user) {
-      localStorage.setItem(`userData_${user.uid}`, JSON.stringify(newStats));
-      setUserStats(newStats);
+  const loadUserData = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('user_stats')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error('Error loading user data:', error);
+        return;
+      }
+
+      if (data) {
+        setUserStats({
+          currentStreak: data.current_streak || 0,
+          maxStreak: data.max_streak || 0,
+          totalProblems: data.total_problems || 0,
+          coins: data.coins || 0,
+          lastActiveDate: data.last_active_date || '',
+          problemsByCategory: data.problems_by_category || {
+            algorithms: 0,
+            dataStructures: 0,
+            systemDesign: 0,
+            databases: 0,
+          },
+          problemsByDifficulty: data.problems_by_difficulty || {
+            easy: 0,
+            medium: 0,
+            hard: 0,
+          },
+          dailyActivities: data.daily_activities || [],
+          solvedProblems: data.solved_problems || [],
+          streakHistory: data.streak_history || []
+        });
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
+  };
+
+  const saveData = async (newStats: UserStats) => {
+    if (!user) return;
+
+    setUserStats(newStats);
+
+    try {
+      const { error } = await supabase
+        .from('user_stats')
+        .upsert({
+          user_id: user.id,
+          current_streak: newStats.currentStreak,
+          max_streak: newStats.maxStreak,
+          total_problems: newStats.totalProblems,
+          coins: newStats.coins,
+          last_active_date: newStats.lastActiveDate,
+          problems_by_category: newStats.problemsByCategory,
+          problems_by_difficulty: newStats.problemsByDifficulty,
+          daily_activities: newStats.dailyActivities,
+          solved_problems: newStats.solvedProblems,
+          streak_history: newStats.streakHistory,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) {
+        console.error('Error saving user data:', error);
+      }
+    } catch (error) {
+      console.error('Error saving user data:', error);
     }
   };
 
   const updateStreak = () => {
-  const today = DateTime.now().setZone('Asia/Kolkata').toISODate(); // 'YYYY-MM-DD'
-  const yesterday = DateTime.now().setZone('Asia/Kolkata').minus({ days: 1 }).toISODate();
+  const today = DateTime.now().setZone('Asia/Kolkata').toISODate() || ''; // 'YYYY-MM-DD'
+  const yesterday = DateTime.now().setZone('Asia/Kolkata').minus({ days: 1 }).toISODate() || '';
 
   let newCurrentStreak = userStats.currentStreak;
 
@@ -177,8 +241,8 @@ const solveProblem = (problemId: string, timeSpent: number = 0) => {
     return; 
   }
 
-  const today = DateTime.now().setZone('Asia/Kolkata').toISODate(); // IST date
-  const yesterday = DateTime.now().setZone('Asia/Kolkata').minus({ days: 1 }).toISODate();
+  const today = DateTime.now().setZone('Asia/Kolkata').toISODate() || ''; // IST date
+  const yesterday = DateTime.now().setZone('Asia/Kolkata').minus({ days: 1 }).toISODate() || '';
 
   const solvedProblem = { ...problem, solvedAt: today, timeSpent };
 
@@ -253,8 +317,6 @@ const solveProblem = (problemId: string, timeSpent: number = 0) => {
 
 
   const completeProblems = (category: keyof UserStats['problemsByCategory'], count: number) => {
-  const today = DateTime.now().setZone('Asia/Kolkata').toISODate();
-
   const newStats = {
     ...userStats,
     totalProblems: userStats.totalProblems + count,
@@ -276,7 +338,7 @@ const getStreakCalendar = () => {
 
   for (let i = 29; i >= 0; i--) {
     const date = today.minus({ days: i });
-    const dateString = date.toISODate();
+    const dateString = date.toISODate() || '';
 
     const activity = userStats.dailyActivities.find(a => a.date === dateString);
     calendar.push({
