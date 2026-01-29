@@ -1,0 +1,106 @@
+{
+  "categories": [
+    {
+      "key": "algorithms",
+      "name": "Algorithms",
+      "icon": "Code",
+      "color": "#8b5cf6"
+    },
+    {
+      "key": "dataStructures",
+      "name": "Data Structures",
+      "icon": "Database",
+      "color": "#f59e0b"
+    },
+    {
+      "key": "systemDesign",
+      "name": "System Design",
+      "icon": "Layers",
+      "color": "#ef4444"
+    },
+    {
+      "key": "databases",
+      "name": "Databases",
+      "icon": "GitBranch",
+      "color": "#10b981"
+    }
+  ],
+  "navigationItems": [
+    {
+      "key": "overview",
+      "label": "Overview",
+      "icon": "Target"
+    },
+    {
+      "key": "problems",
+      "label": "Problems",
+      "icon": "Code"
+    },
+    {
+      "key": "calendar",
+      "label": "Calendar",
+      "icon": "Calendar"
+    },
+    {
+      "key": "analytics",
+      "label": "Analytics",
+      "icon": "BarChart3"
+    }
+  ],
+  "quickActions": [
+    {
+      "key": "problems",
+      "label": "Solve Problems",
+      "icon": "Play",
+      "color": "purple",
+      "description": "available"
+    },
+    {
+      "key": "calendar",
+      "label": "View Calendar",
+      "icon": "Calendar",
+      "color": "green",
+      "description": "Track consistency"
+    },
+    {
+      "key": "analytics",
+      "label": "Analytics",
+      "icon": "BarChart3",
+      "color": "blue",
+      "description": "Detailed stats"
+    },
+    {
+      "key": "store",
+      "label": "Store",
+      "icon": "ShoppingBag",
+      "color": "yellow",
+      "description": "Spend coins"
+    }
+  ],
+  "statsCards": [
+    {
+      "key": "currentStreak",
+      "label": "Current Streak",
+      "icon": "Flame",
+      "color": "orange"
+    },
+    {
+      "key": "maxStreak",
+      "label": "Max Streak",
+      "icon": "Trophy",
+      "color": "yellow"
+    },
+    {
+      "key": "coins",
+      "label": "Coins",
+      "icon": "Coins",
+      "color": "yellow"
+    },
+    {
+      "key": "totalProblems",
+      "label": "Total Problems",
+      "icon": "Target",
+      "color": "purple"
+    }
+  ]
+}
