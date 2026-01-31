@@ -5,3 +5,4 @@ export { ChartsSection } from './ChartsSection';
 export { QuickActions } from './QuickActions';
 export { Analytics } from './Analytics';
 export { Overview } from './Overview';
+export { ProblemPage } from './ProblemPage';

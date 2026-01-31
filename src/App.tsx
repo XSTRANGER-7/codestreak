@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { UserDataProvider } from './contexts/UserDataContext';
 import { LandingPage } from './components/LandingPage';
 import { AuthPage } from './components/AuthPage';
 import { Dashboard } from './components/Dashboard';
 import { Store } from './components/Store';
+import { ProblemPage } from './components/ProblemPage';
 import "./index.css";
-// import { DashboardSkeleton } from './components/LoaderSkeleton';
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
@@ -15,12 +15,9 @@ const AppContent: React.FC = () => {
 
   if (loading) {
     return ( 
-        <div className="loading-screen">
-      <div className="loading-spinner"></div>
-    </div> 
-    // <div>
-    //   <DashboardSkeleton />
-    // </div> 
+      <div className="loading-screen">
+        <div className="loading-spinner"></div>
+      </div> 
     );
   }
 
@@ -32,38 +29,75 @@ const AppContent: React.FC = () => {
     setCurrentPage(page as any);
   };
 
-  const renderCurrentPage = () => {
-    switch (currentPage) {
-      case 'landing':
-        return <LandingPage onGetStarted={() => setCurrentPage('auth')} />;
+  return (
+    <Routes>
+      {/* Public routes */}
+      <Route 
+        path="/" 
+        element={
+          user ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <LandingPage onGetStarted={() => setCurrentPage('auth')} />
+          )
+        } 
+      />
       
-      case 'auth':
-        return <AuthPage onBack={() => setCurrentPage('landing')} />;
+      <Route 
+        path="/auth" 
+        element={
+          user ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <AuthPage onBack={() => setCurrentPage('landing')} />
+          )
+        } 
+      />
       
-      case 'dashboard':
-        return user ? (
-          <UserDataProvider>
-            <Dashboard onNavigate={handleNavigation} />
-          </UserDataProvider>
-        ) : (
-          <LandingPage onGetStarted={() => setCurrentPage('auth')} />
-        );
+      {/* Protected routes */}
+      <Route 
+        path="/dashboard" 
+        element={
+          user ? (
+            <UserDataProvider>
+              <Dashboard onNavigate={handleNavigation} />
+            </UserDataProvider>
+          ) : (
+            <Navigate to="/" replace />
+          )
+        } 
+      />
       
-      case 'store':
-        return user ? (
-          <UserDataProvider>
-            <Store onBack={() => setCurrentPage('dashboard')} />
-          </UserDataProvider>
-        ) : (
-          <LandingPage onGetStarted={() => setCurrentPage('auth')} />
-        );
+      <Route 
+        path="/store" 
+        element={
+          user ? (
+            <UserDataProvider>
+              <Store onBack={() => setCurrentPage('dashboard')} />
+            </UserDataProvider>
+          ) : (
+            <Navigate to="/" replace />
+          )
+        } 
+      />
       
-      default:
-        return <LandingPage onGetStarted={() => setCurrentPage('auth')} />;
-    }
-  };
+      <Route 
+        path="/problem/:problemId" 
+        element={
+          user ? (
+            <UserDataProvider>
+              <ProblemPage />
+            </UserDataProvider>
+          ) : (
+            <Navigate to="/" replace />
+          )
+        } 
+      />
 
-  return renderCurrentPage();
+      {/* Catch all - redirect to home */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 };
 
 function App() {

@@ -1,9 +1,9 @@
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Play, CheckCircle, Code, Database, Layers, GitBranch } from 'lucide-react';
 import { useUserData } from '../contexts/UserDataContext';
-import { DateTime } from 'luxon'; 
 
 interface Problem {
   id: string;
@@ -19,10 +19,10 @@ interface ProblemSolverProps {
 }
 
 export const ProblemSolver: React.FC<ProblemSolverProps> = ({ problems }) => {
-  const { solveProblem } = useUserData();
+  const navigate = useNavigate();
+  const { userStats } = useUserData();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>('all');
-  const [solvingProblem, setSolvingProblem] = useState<string | null>(null);
 
   const categories = [
     { key: 'all', name: 'All Categories', icon: Code },
@@ -37,19 +37,12 @@ export const ProblemSolver: React.FC<ProblemSolverProps> = ({ problems }) => {
   const filteredProblems = problems.filter(problem => {
     const categoryMatch = selectedCategory === 'all' || problem.category === selectedCategory;
     const difficultyMatch = selectedDifficulty === 'all' || problem.difficulty === selectedDifficulty;
-    return categoryMatch && difficultyMatch;
+    const notSolved = !userStats.solvedProblems.find(p => p.id === problem.id);
+    return categoryMatch && difficultyMatch && notSolved;
   });
 
   const handleSolveProblem = (problemId: string) => {
-    setSolvingProblem(problemId);
-    const solvingTime = Math.random() * 2000 + 1000;
-
-    setTimeout(() => {
-      const timeSpent = Math.floor(Math.random() * 30) + 5;
-      const solvedAt = DateTime.now().setZone('Asia/Kolkata').toISODate(); // ✅ India timezone date (YYYY-MM-DD)
-      solveProblem(problemId, timeSpent, solvedAt); // ✅ pass solvedAt
-      setSolvingProblem(null);
-    }, solvingTime);
+    navigate(`/problem/${problemId}`);
   };
 
   const getDifficultyColor = (difficulty: string) => {
@@ -112,16 +105,16 @@ export const ProblemSolver: React.FC<ProblemSolverProps> = ({ problems }) => {
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredProblems.map((problem, index) => {
           const CategoryIcon = getCategoryIcon(problem.category);
-          const isBeingSolved = solvingProblem === problem.id;
 
           return (
             <motion.div
               key={problem.id}
-              className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-all duration-300"
+              className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-all duration-300 cursor-pointer"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: index * 0.1 }}
               whileHover={{ scale: 1.02, y: -5 }}
+              onClick={() => handleSolveProblem(problem.id)}
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center space-x-2">
@@ -136,27 +129,16 @@ export const ProblemSolver: React.FC<ProblemSolverProps> = ({ problems }) => {
               <h3 className="text-lg font-semibold mb-4 line-clamp-2">{problem.title}</h3>
 
               <motion.button
-                onClick={() => handleSolveProblem(problem.id)}
-                disabled={isBeingSolved}
-                className={`w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-lg font-semibold transition-all duration-300 ${
-                  isBeingSolved 
-                    ? 'bg-purple-600/50 cursor-not-allowed' 
-                    : 'bg-purple-600 hover:bg-purple-700'
-                }`}
-                whileHover={!isBeingSolved ? { scale: 1.05 } : {}}
-                whileTap={!isBeingSolved ? { scale: 0.95 } : {}}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSolveProblem(problem.id);
+                }}
+                className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-lg font-semibold transition-all duration-300 bg-purple-600 hover:bg-purple-700"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
               >
-                {isBeingSolved ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Solving...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4" />
-                    <span>Solve Problem</span>
-                  </>
-                )}
+                <Play className="w-4 h-4" />
+                <span>Solve Problem</span>
               </motion.button>
             </motion.div>
           );
