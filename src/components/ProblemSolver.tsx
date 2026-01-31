@@ -37,9 +37,12 @@ export const ProblemSolver: React.FC<ProblemSolverProps> = ({ problems }) => {
   const filteredProblems = problems.filter(problem => {
     const categoryMatch = selectedCategory === 'all' || problem.category === selectedCategory;
     const difficultyMatch = selectedDifficulty === 'all' || problem.difficulty === selectedDifficulty;
-    const notSolved = !userStats.solvedProblems.find(p => p.id === problem.id);
-    return categoryMatch && difficultyMatch && notSolved;
+    return categoryMatch && difficultyMatch;
   });
+
+  const isProblemSolved = (problemId: string) => {
+    return userStats.solvedProblems.find(p => p.id === problemId);
+  };
 
   const handleSolveProblem = (problemId: string) => {
     navigate(`/problem/${problemId}`);
@@ -75,10 +78,10 @@ export const ProblemSolver: React.FC<ProblemSolverProps> = ({ problems }) => {
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#58a6ff]"
           >
             {categories.map(category => (
-              <option key={category.key} value={category.key} className="bg-gray-800">
+              <option key={category.key} value={category.key} className="bg-[#161b22]">
                 {category.name}
               </option>
             ))}
@@ -90,10 +93,10 @@ export const ProblemSolver: React.FC<ProblemSolverProps> = ({ problems }) => {
           <select
             value={selectedDifficulty}
             onChange={(e) => setSelectedDifficulty(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#58a6ff]"
           >
             {difficulties.map(difficulty => (
-              <option key={difficulty} value={difficulty} className="bg-gray-800">
+              <option key={difficulty} value={difficulty} className="bg-[#161b22]">
                 {difficulty === 'all' ? 'All Difficulties' : difficulty}
               </option>
             ))}
@@ -105,11 +108,12 @@ export const ProblemSolver: React.FC<ProblemSolverProps> = ({ problems }) => {
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredProblems.map((problem, index) => {
           const CategoryIcon = getCategoryIcon(problem.category);
+          const isSolved = isProblemSolved(problem.id);
 
           return (
             <motion.div
               key={problem.id}
-              className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-all duration-300 cursor-pointer"
+              className="bg-white/5 backdrop-blur-sm border border-[#30363d] rounded-2xl p-6 hover:bg-white/10 transition-all duration-300 cursor-pointer"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: index * 0.1 }}
@@ -118,7 +122,7 @@ export const ProblemSolver: React.FC<ProblemSolverProps> = ({ problems }) => {
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center space-x-2">
-                  <CategoryIcon className="w-5 h-5 text-purple-500" />
+                  <CategoryIcon className="w-5 h-5 text-[#58a6ff]" />
                   <span className="text-sm text-gray-400 capitalize">{problem.category}</span>
                 </div>
                 <div className={`px-2 py-1 rounded-full text-xs font-medium border ${getDifficultyColor(problem.difficulty)}`}>
@@ -128,17 +132,37 @@ export const ProblemSolver: React.FC<ProblemSolverProps> = ({ problems }) => {
 
               <h3 className="text-lg font-semibold mb-4 line-clamp-2">{problem.title}</h3>
 
+              {isSolved && (
+                <div className="flex items-center space-x-2 mb-3 text-green-500 text-sm">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Solved</span>
+                </div>
+              )}
+
               <motion.button
                 onClick={(e) => {
                   e.stopPropagation();
                   handleSolveProblem(problem.id);
                 }}
-                className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-lg font-semibold transition-all duration-300 bg-purple-600 hover:bg-purple-700"
+                className={`w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-lg font-semibold transition-all duration-300 ${
+                  isSolved 
+                    ? 'bg-green-600 hover:bg-green-700' 
+                    : 'bg-[#58a6ff] hover:bg-[#4a8ed9]'
+                }`}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
-                <Play className="w-4 h-4" />
-                <span>Solve Problem</span>
+                {isSolved ? (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Solve Again</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4" />
+                    <span>Solve Problem</span>
+                  </>
+                )}
               </motion.button>
             </motion.div>
           );
