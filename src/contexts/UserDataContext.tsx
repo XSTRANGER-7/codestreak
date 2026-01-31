@@ -10,6 +10,7 @@ interface Problem {
   category: string;
   solvedAt?: string;
   timeSpent?: number;
+  coinsEarned?: number;
 }
 
 interface DailyActivity {
@@ -44,10 +45,11 @@ interface UserStats {
 interface UserDataContextType {
   userStats: UserStats;
   availableProblems: Problem[];
+  loading: boolean;
   updateStreak: () => void;
   addCoins: (amount: number) => void;
   spendCoins: (amount: number) => boolean;
-  solveProblem: (problemId: string, timeSpent?: number) => void;
+  solveProblem: (problemId: string, timeSpent?: number) => Promise<void>;
   completeProblems: (category: keyof UserStats['problemsByCategory'], count: number) => void;
   getStreakCalendar: () => Array<{ date: string; active: boolean; count: number }>;
 }
@@ -86,6 +88,7 @@ const SAMPLE_PROBLEMS: Problem[] = [
 export const UserDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   
+  const [loading, setLoading] = useState(true);
   const [userStats, setUserStats] = useState<UserStats>({
     currentStreak: 0,
     maxStreak: 0,
@@ -110,116 +113,244 @@ export const UserDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const [availableProblems] = useState<Problem[]>(SAMPLE_PROBLEMS);
 
+  // Load from local storage first for instant display
   useEffect(() => {
     if (user) {
+      const cached = localStorage.getItem(`userStats_${user.id}`);
+      if (cached) {
+        try {
+          setUserStats(JSON.parse(cached));
+        } catch (e) {
+          console.error('Error parsing cached data:', e);
+        }
+      }
       loadUserData();
+    } else {
+      setLoading(false);
     }
   }, [user]);
 
   const loadUserData = async () => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     try {
-      const { data, error } = await supabase
-        .from('user_stats')
+      // Load user profile
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('id', user.id)
         .single();
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-        console.error('Error loading user data:', error);
-        return;
+      if (profileError && profileError.code !== 'PGRST116') {
+        console.error('Error loading profile:', profileError);
       }
 
-      if (data) {
-        setUserStats({
-          currentStreak: data.current_streak || 0,
-          maxStreak: data.max_streak || 0,
-          totalProblems: data.total_problems || 0,
-          coins: data.coins || 0,
-          lastActiveDate: data.last_active_date || '',
-          problemsByCategory: data.problems_by_category || {
-            algorithms: 0,
-            dataStructures: 0,
-            systemDesign: 0,
-            databases: 0,
-          },
-          problemsByDifficulty: data.problems_by_difficulty || {
-            easy: 0,
-            medium: 0,
-            hard: 0,
-          },
-          dailyActivities: data.daily_activities || [],
-          solvedProblems: data.solved_problems || [],
-          streakHistory: data.streak_history || []
-        });
+      // Load solved problems
+      const { data: solvedProblems, error: solvedError } = await supabase
+        .from('solved_problems')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('solved_at', { ascending: false });
+
+      if (solvedError) {
+        console.error('Error loading solved problems:', solvedError);
       }
+
+      // Load daily activities
+      const { data: activities, error: activitiesError } = await supabase
+        .from('daily_activities')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('activity_date', { ascending: false })
+        .limit(365);
+
+      if (activitiesError) {
+        console.error('Error loading activities:', activitiesError);
+      }
+
+      // Transform and aggregate data
+      const transformedSolvedProblems: Problem[] = (solvedProblems || []).map(p => ({
+        id: p.problem_id,
+        title: p.title,
+        difficulty: p.difficulty as 'Easy' | 'Medium' | 'Hard',
+        category: p.category,
+        solvedAt: DateTime.fromISO(p.solved_at).toISODate() || '',
+        timeSpent: p.time_spent || 0,
+        coinsEarned: p.coins_earned || 0
+      }));
+
+      const transformedActivities: DailyActivity[] = (activities || []).map(a => ({
+        date: a.activity_date,
+        problemsSolved: a.problems_solved || 0,
+        categories: a.categories || [],
+        timeSpent: a.time_spent || 0
+      }));
+
+      // Calculate stats from data
+      const categoryStats = {
+        algorithms: 0,
+        dataStructures: 0,
+        systemDesign: 0,
+        databases: 0
+      };
+
+      const difficultyStats = {
+        easy: 0,
+        medium: 0,
+        hard: 0
+      };
+
+      transformedSolvedProblems.forEach(p => {
+        if (p.category in categoryStats) {
+          categoryStats[p.category as keyof typeof categoryStats]++;
+        }
+        difficultyStats[p.difficulty.toLowerCase() as keyof typeof difficultyStats]++;
+      });
+
+      // Build streak history
+      const streakHistory = transformedActivities.map(a => ({
+        date: a.date,
+        completed: a.problemsSolved > 0,
+        count: a.problemsSolved
+      }));
+
+      const newStats: UserStats = {
+        currentStreak: profile?.current_streak || 0,
+        maxStreak: profile?.max_streak || 0,
+        totalProblems: profile?.total_problems || transformedSolvedProblems.length,
+        coins: profile?.coins || 0,
+        lastActiveDate: profile?.last_active_date || '',
+        problemsByCategory: categoryStats,
+        problemsByDifficulty: difficultyStats,
+        dailyActivities: transformedActivities,
+        solvedProblems: transformedSolvedProblems,
+        streakHistory
+      };
+
+      setUserStats(newStats);
+      
+      // Cache in localStorage
+      localStorage.setItem(`userStats_${user.id}`, JSON.stringify(newStats));
     } catch (error) {
       console.error('Error loading user data:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const saveData = async (newStats: UserStats) => {
+  const saveUserProfile = async (stats: UserStats) => {
     if (!user) return;
-
-    setUserStats(newStats);
 
     try {
       const { error } = await supabase
-        .from('user_stats')
+        .from('user_profiles')
         .upsert({
-          user_id: user.id,
-          current_streak: newStats.currentStreak,
-          max_streak: newStats.maxStreak,
-          total_problems: newStats.totalProblems,
-          coins: newStats.coins,
-          last_active_date: newStats.lastActiveDate,
-          problems_by_category: newStats.problemsByCategory,
-          problems_by_difficulty: newStats.problemsByDifficulty,
-          daily_activities: newStats.dailyActivities,
-          solved_problems: newStats.solvedProblems,
-          streak_history: newStats.streakHistory,
+          id: user.id,
+          email: user.email,
+          current_streak: stats.currentStreak,
+          max_streak: stats.maxStreak,
+          total_problems: stats.totalProblems,
+          coins: stats.coins,
+          last_active_date: stats.lastActiveDate,
           updated_at: new Date().toISOString()
         });
 
       if (error) {
-        console.error('Error saving user data:', error);
+        console.error('Error saving user profile:', error);
+      }
+
+      // Update local cache
+      localStorage.setItem(`userStats_${user.id}`, JSON.stringify(stats));
+    } catch (error) {
+      console.error('Error saving user profile:', error);
+    }
+  };
+
+  const saveDailyActivity = async (activity: DailyActivity) => {
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from('daily_activities')
+        .upsert({
+          user_id: user.id,
+          activity_date: activity.date,
+          problems_solved: activity.problemsSolved,
+          categories: activity.categories,
+          time_spent: activity.timeSpent,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id,activity_date'
+        });
+
+      if (error) {
+        console.error('Error saving daily activity:', error);
       }
     } catch (error) {
-      console.error('Error saving user data:', error);
+      console.error('Error saving daily activity:', error);
+    }
+  };
+
+  const saveSolvedProblem = async (problem: Problem) => {
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from('solved_problems')
+        .insert({
+          user_id: user.id,
+          problem_id: problem.id,
+          title: problem.title,
+          difficulty: problem.difficulty,
+          category: problem.category,
+          time_spent: problem.timeSpent || 0,
+          coins_earned: problem.coinsEarned || 0,
+          solved_at: new Date().toISOString()
+        });
+
+      if (error && error.code !== '23505') { // Ignore duplicate errors
+        console.error('Error saving solved problem:', error);
+      }
+    } catch (error) {
+      console.error('Error saving solved problem:', error);
     }
   };
 
   const updateStreak = () => {
-  const today = DateTime.now().setZone('Asia/Kolkata').toISODate() || ''; // 'YYYY-MM-DD'
-  const yesterday = DateTime.now().setZone('Asia/Kolkata').minus({ days: 1 }).toISODate() || '';
+    const today = DateTime.now().setZone('Asia/Kolkata').toISODate() || '';
+    const yesterday = DateTime.now().setZone('Asia/Kolkata').minus({ days: 1 }).toISODate() || '';
 
-  let newCurrentStreak = userStats.currentStreak;
+    let newCurrentStreak = userStats.currentStreak;
 
-  if (userStats.lastActiveDate === yesterday) {
-    newCurrentStreak += 1;
-  } else if (userStats.lastActiveDate !== today) {
-    newCurrentStreak = 1;
-  }
+    if (userStats.lastActiveDate === yesterday) {
+      newCurrentStreak += 1;
+    } else if (userStats.lastActiveDate !== today) {
+      newCurrentStreak = 1;
+    }
 
-  const newMaxStreak = Math.max(newCurrentStreak, userStats.maxStreak);
+    const newMaxStreak = Math.max(newCurrentStreak, userStats.maxStreak);
 
-  const newStats = {
-    ...userStats,
-    currentStreak: newCurrentStreak,
-    maxStreak: newMaxStreak,
-    lastActiveDate: today,
+    const newStats = {
+      ...userStats,
+      currentStreak: newCurrentStreak,
+      maxStreak: newMaxStreak,
+      lastActiveDate: today,
+    };
+
+    setUserStats(newStats);
+    saveUserProfile(newStats);
   };
-
-  saveData(newStats);
-};
 
   const addCoins = (amount: number) => {
     const newStats = {
       ...userStats,
       coins: userStats.coins + amount
     };
-    saveData(newStats);
+    setUserStats(newStats);
+    saveUserProfile(newStats);
   };
 
   const spendCoins = (amount: number): boolean => {
@@ -228,133 +359,146 @@ export const UserDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         ...userStats,
         coins: userStats.coins - amount
       };
-      saveData(newStats);
+      setUserStats(newStats);
+      saveUserProfile(newStats);
       return true;
     }
     return false;
   };
 
 
-const solveProblem = (problemId: string, timeSpent: number = 0) => {
-  const problem = availableProblems.find(p => p.id === problemId);
-  if (!problem || userStats.solvedProblems.find(p => p.id === problemId)) {
-    return; 
-  }
+  const solveProblem = async (problemId: string, timeSpent: number = 0) => {
+    const problem = availableProblems.find(p => p.id === problemId);
+    if (!problem || userStats.solvedProblems.find(p => p.id === problemId)) {
+      return;
+    }
 
-  const today = DateTime.now().setZone('Asia/Kolkata').toISODate() || ''; // IST date
-  const yesterday = DateTime.now().setZone('Asia/Kolkata').minus({ days: 1 }).toISODate() || '';
+    const today = DateTime.now().setZone('Asia/Kolkata').toISODate() || '';
+    const yesterday = DateTime.now().setZone('Asia/Kolkata').minus({ days: 1 }).toISODate() || '';
 
-  const solvedProblem = { ...problem, solvedAt: today, timeSpent };
+    const coinReward = problem.difficulty === 'Easy' ? 10 : problem.difficulty === 'Medium' ? 20 : 30;
+    
+    const solvedProblem: Problem = { 
+      ...problem, 
+      solvedAt: today, 
+      timeSpent,
+      coinsEarned: coinReward
+    };
 
-  const coinReward = problem.difficulty === 'Easy' ? 10 : problem.difficulty === 'Medium' ? 20 : 30;
-
-  const existingActivity = userStats.dailyActivities.find(a => a.date === today);
-  const updatedActivities = existingActivity
-    ? userStats.dailyActivities.map(a => 
-        a.date === today 
-          ? { 
-              ...a, 
-              problemsSolved: a.problemsSolved + 1,
-              categories: [...new Set([...a.categories, problem.category])],
-              timeSpent: a.timeSpent + timeSpent
-            }
-          : a
-      )
-    : [
-        ...userStats.dailyActivities,
-        {
+    // Update daily activity
+    const existingActivity = userStats.dailyActivities.find(a => a.date === today);
+    const updatedActivity: DailyActivity = existingActivity
+      ? {
+          ...existingActivity,
+          problemsSolved: existingActivity.problemsSolved + 1,
+          categories: [...new Set([...existingActivity.categories, problem.category])],
+          timeSpent: existingActivity.timeSpent + timeSpent
+        }
+      : {
           date: today,
           problemsSolved: 1,
           categories: [problem.category],
           timeSpent
-        }
-      ];
+        };
 
-  const existingStreakEntry = userStats.streakHistory.find(s => s.date === today);
-  const updatedStreakHistory = existingStreakEntry
-    ? userStats.streakHistory.map(s =>
-        s.date === today ? { ...s, count: s.count + 1 } : s
-      )
-    : [
-        ...userStats.streakHistory,
-        { date: today, completed: true, count: 1 }
-      ];
+    const updatedActivities = existingActivity
+      ? userStats.dailyActivities.map(a => a.date === today ? updatedActivity : a)
+      : [...userStats.dailyActivities, updatedActivity];
 
-  let newCurrentStreak = userStats.currentStreak;
+    // Update streak history
+    const existingStreakEntry = userStats.streakHistory.find(s => s.date === today);
+    const updatedStreakHistory = existingStreakEntry
+      ? userStats.streakHistory.map(s =>
+          s.date === today ? { ...s, count: s.count + 1 } : s
+        )
+      : [...userStats.streakHistory, { date: today, completed: true, count: 1 }];
 
-  if (userStats.lastActiveDate === yesterday || userStats.lastActiveDate === today) {
-    if (userStats.lastActiveDate !== today) {
-      newCurrentStreak += 1;
+    // Calculate new streak
+    let newCurrentStreak = userStats.currentStreak;
+    if (userStats.lastActiveDate === yesterday || userStats.lastActiveDate === today) {
+      if (userStats.lastActiveDate !== today) {
+        newCurrentStreak += 1;
+      }
+    } else {
+      newCurrentStreak = 1;
     }
-  } else {
-    newCurrentStreak = 1;
-  }
 
-  const newStats = {
-    ...userStats,
-    totalProblems: userStats.totalProblems + 1,
-    coins: userStats.coins + coinReward,
-    currentStreak: newCurrentStreak,
-    maxStreak: Math.max(newCurrentStreak, userStats.maxStreak),
-    lastActiveDate: today,
-    problemsByCategory: {
-      ...userStats.problemsByCategory,
-      [problem.category as keyof typeof userStats.problemsByCategory]: 
-        userStats.problemsByCategory[problem.category as keyof typeof userStats.problemsByCategory] + 1
-    },
-    problemsByDifficulty: {
-      ...userStats.problemsByDifficulty,
-      [problem.difficulty.toLowerCase() as keyof typeof userStats.problemsByDifficulty]: 
-        userStats.problemsByDifficulty[problem.difficulty.toLowerCase() as keyof typeof userStats.problemsByDifficulty] + 1
-    },
-    solvedProblems: [...userStats.solvedProblems, solvedProblem],
-    dailyActivities: updatedActivities,
-    streakHistory: updatedStreakHistory
+    // Update stats
+    const newStats: UserStats = {
+      ...userStats,
+      totalProblems: userStats.totalProblems + 1,
+      coins: userStats.coins + coinReward,
+      currentStreak: newCurrentStreak,
+      maxStreak: Math.max(newCurrentStreak, userStats.maxStreak),
+      lastActiveDate: today,
+      problemsByCategory: {
+        ...userStats.problemsByCategory,
+        [problem.category as keyof typeof userStats.problemsByCategory]: 
+          userStats.problemsByCategory[problem.category as keyof typeof userStats.problemsByCategory] + 1
+      },
+      problemsByDifficulty: {
+        ...userStats.problemsByDifficulty,
+        [problem.difficulty.toLowerCase() as keyof typeof userStats.problemsByDifficulty]: 
+          userStats.problemsByDifficulty[problem.difficulty.toLowerCase() as keyof typeof userStats.problemsByDifficulty] + 1
+      },
+      solvedProblems: [...userStats.solvedProblems, solvedProblem],
+      dailyActivities: updatedActivities,
+      streakHistory: updatedStreakHistory
+    };
+
+    // Update state
+    setUserStats(newStats);
+
+    // Save to database (async - don't wait)
+    saveSolvedProblem(solvedProblem);
+    saveDailyActivity(updatedActivity);
+    saveUserProfile(newStats);
+
+    // Cache locally
+    if (user) {
+      localStorage.setItem(`userStats_${user.id}`, JSON.stringify(newStats));
+    }
   };
-
-  saveData(newStats);
-};
 
 
   const completeProblems = (category: keyof UserStats['problemsByCategory'], count: number) => {
-  const newStats = {
-    ...userStats,
-    totalProblems: userStats.totalProblems + count,
-    problemsByCategory: {
-      ...userStats.problemsByCategory,
-      [category]: userStats.problemsByCategory[category] + count
-    }
+    const newStats = {
+      ...userStats,
+      totalProblems: userStats.totalProblems + count,
+      problemsByCategory: {
+        ...userStats.problemsByCategory,
+        [category]: userStats.problemsByCategory[category] + count
+      }
+    };
+    setUserStats(newStats);
+    saveUserProfile(newStats);
+    updateStreak();
+    addCoins(count * 10);
   };
-  saveData(newStats);
-  updateStreak();
-  addCoins(count * 10);
-};
 
+  const getStreakCalendar = () => {
+    const calendar = [];
+    const today = DateTime.now().setZone('Asia/Kolkata');
 
+    for (let i = 29; i >= 0; i--) {
+      const date = today.minus({ days: i });
+      const dateString = date.toISODate() || '';
 
-const getStreakCalendar = () => {
-  const calendar = [];
-  const today = DateTime.now().setZone('Asia/Kolkata');
+      const activity = userStats.dailyActivities.find(a => a.date === dateString);
+      calendar.push({
+        date: dateString,
+        active: !!activity,
+        count: activity?.problemsSolved || 0
+      });
+    }
 
-  for (let i = 29; i >= 0; i--) {
-    const date = today.minus({ days: i });
-    const dateString = date.toISODate() || '';
+    return calendar;
+  };
 
-    const activity = userStats.dailyActivities.find(a => a.date === dateString);
-    calendar.push({
-      date: dateString,
-      active: !!activity,
-      count: activity?.problemsSolved || 0
-    });
-  }
-
-  return calendar;
-};
-
-
-const value = {
+  const value = {
     userStats,
     availableProblems,
+    loading,
     updateStreak,
     addCoins,
     spendCoins,
